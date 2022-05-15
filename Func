@@ -1,0 +1,230 @@
+import pandas as pd
+import matplotlib
+from matplotlib import pyplot as pp
+from datetime import datetime
+import sklearn
+import seaborn
+
+df = pd.read_excel('usdrub deals.xlsx')
+
+def total_nomer(df, name):
+    df = df.loc[df['Counterparty Account Code'] == name]
+    df_buy = df.loc[df['B/S'] == 'Buy']
+    df_sell = df.loc[df['B/S'] == 'Sell']
+    total_buy = df_buy['Amount'].sum()
+    total_sell = df_sell['Amount'].sum()
+    total = total_sell - total_buy
+    return total
+
+
+def koli4_name(df):
+    koli4 = df['Counterparty Account Code'].nunique()
+    return koli4
+
+
+def total_nomer_vse(df):
+    kont = df['Counterparty Account Code'].unique() 
+    total_name = list() 
+    for name in kont:
+        a = total_nomer(df, name)
+        total_name.append(a)
+    df_kont = pd.DataFrame({'Counterparty Account Code': kont, 'Sum': total_name})
+    return df_kont
+
+def df_day(df, day):
+    df_day = df['Timestamp'].str.split(' ', expand=True)
+    df_day.columns=['Day','Time']
+    df = pd.concat([df,df_day],axis=1)
+    df = df.drop('Timestamp',axis=1)
+    df_day = df.loc[df['Day'] == day]
+    return df_day
+
+def Perekr_day(df, day, limit):
+    df = df_day(df, day)
+    df = total_nomer_vse(df)
+    df['Perekrit'] = '+'
+    j = 0
+    for i in df['Sum']:
+        if abs(i) > limit:
+            df.loc[j, 'Perekrit'] = 'Perekrit'
+            j = j+1
+        else:
+            j = j+1
+    df = df[df['Perekrit'] == 'Perekrit']
+    return df
+
+
+def Perekr_day_posl(df, day, name, limit):
+    df = df.loc[df['Counterparty Account Code'] == name]
+    df = df_day(df, day)
+    df['Otkr/Perekr'] = '?'
+    df.index = pd.RangeIndex(0,0 + len(df))
+    koli4 = df.shape[0] - 1
+    j = 0
+    total = 0
+    for i in reversed(df['Contra Amount']):
+        if df.loc[koli4 - j, 'B/S'] == 'Sell':
+            if abs(total + i) < limit:
+                total = total + i
+                df.loc[koli4 - j, 'Otkr/Perekr'] = 'Otkrit'
+                j = j + 1
+            else:
+                df.loc[koli4 - j, 'Otkr/Perekr'] = 'Perekrit'
+                j = j + 1
+        elif df.loc[koli4 - j, 'B/S'] == 'Buy':
+            if abs(total - i) < limit:
+                total = total - i
+                df.loc[koli4 - j, 'Otkr/Perekr'] = 'Otkrit'
+                j = j + 1
+            else:
+                df.loc[koli4 - j, 'Otkr/Perekr'] = 'Perekrit'
+                j = j + 1
+    return df
+
+
+def Perekr_month_posl(df, name, limit):
+    df_1 = df.copy()
+    df_1 = df_1.loc[df_1['Counterparty Account Code'] == name]
+    df_days = df_1['Timestamp'].str.split(' ', expand=True)
+    df_days.columns=['Day','Time']
+    days = df_days['Day'].unique() 
+    new_df = pd.DataFrame()
+    total = 0
+    for i in days:
+        df = df.loc[df['Counterparty Account Code'] == name]
+        df_1 = df_day(df, i)
+        df_1['Otkr/Perekr'] = '?'
+        df_1.index = pd.RangeIndex(0,0 + len(df_1))
+        koli4 = df_1.shape[0] - 1
+        j = 0
+        for i in reversed(df_1['Contra Amount']):
+            if df_1.loc[koli4 - j, 'B/S'] == 'Sell':
+                if abs(total + i) < limit:
+                    total = total + i
+                    df_1.loc[koli4 - j, 'Otkr/Perekr'] = 'Otkrit'
+                    j = j + 1
+                else:
+                    df_1.loc[koli4 - j, 'Otkr/Perekr'] = 'Perekrit'
+                    j = j + 1
+            elif df_1.loc[koli4 - j, 'B/S'] == 'Buy':
+                if abs(total - i) < limit:
+                    total = total - i
+                    df_1.loc[koli4 - j, 'Otkr/Perekr'] = 'Otkrit'
+                    j = j + 1
+                else:
+                    df_1.loc[koli4 - j, 'Otkr/Perekr'] = 'Perekrit'
+                    j = j + 1
+        new_df = pd.concat([new_df, df_1])
+    return new_df
+
+
+def horploh(df, day):
+    df = df_day(df,day)
+    df_buy = df.loc[df['B/S'] == 'Buy']
+    df_sell = df.loc[df['B/S'] == 'Sell']
+    df_buy_sr = df_buy['Contra Amount'].sum() / df_buy['Amount'].sum()
+    df_sell_sr = df_sell['Contra Amount'].sum() / df_sell['Amount'].sum()
+    df_buy['sr'] = '+'
+    df_buy.loc[(df_buy.Price < df_buy_sr), 'sr'] = '-'
+    df_sell['sr'] = '+'
+    df_sell.loc[(df_sell.Price > df_sell_sr), 'sr'] = '-'
+    return df_buy
+
+
+def kurs_day(df, day, name):
+    df = df_day(df, day)
+    df = df.loc[df['Counterparty Account Code'] == name]
+    for i in df['Time']:
+        a = i.split(".")[0]
+        df.loc[(df.Time == i), 'Time'] = a
+    x = df['Time']
+    y = df['Price']
+    pp.figure(figsize=(25,4))
+    pp.title(f'Курс и время сделок у {name} за день {day}')
+    pp.plot(x, y, '.r--', mew=4)
+    pp.grid(True)
+    pp.xlabel('Время')
+    pp.ylabel('Курс')
+    pp.show()
+
+def kurs_month(df, name):
+    df = df.loc[df['Counterparty Account Code'] == name]
+    for i in df['Timestamp']:
+        a = i[8:]
+        b = a[:11]
+        df.loc[(df.Timestamp == i), 'Time'] = b
+    x = df['Time']
+    y = df['Price']
+    pp.figure(figsize=(25,4))
+    pp.title(f'Курс и время сделок у {name} за все время')
+    pp.plot(x, y, '.r--', mew=4)
+    pp.grid(True)
+    pp.xlabel('День Время')
+    pp.ylabel('Курс')
+    pp.show()
+
+def spectrum_day(df, day):
+    df = df_day(df, day)
+    dat = {
+           'Hour':     range(0,24)
+          }
+    d = pd.DataFrame(data=dat)
+    d['N'] = 0
+    for i in df['Time']:
+        a = datetime.strptime(i, '%H:%M:%S.%f')
+        hour = a.hour
+        b = d._get_value(hour, 'N')
+        d.loc[hour, 'N'] = b + 1
+    d.plot.bar(x='Hour', y='N')
+    pp.xlabel("Время (n-ый час дня)")
+    pp.ylabel("Количество сделок")
+    pp.show()
+
+
+def spectrum_month(df):
+    dat = {
+           'Day':     range(1,31)
+          }
+    d = pd.DataFrame(data=dat)
+    d['N'] = 0
+    df_days = df['Timestamp'].str.split(' ', expand=True)
+    df_days.columns=['Day','Time']
+    for i in df_days['Day']:
+        a = datetime.strptime(i, '%Y.%m.%d')
+        day = a.day
+        b = d._get_value(day - 1, 'N')
+        d.loc[day - 1, 'N'] = b + 1
+    d.plot.bar(x='Day', y='N')
+    pp.xlabel("День месяца")
+    pp.ylabel("Количество сделок")
+    pp.show()
+
+
+def top_day(df, day):
+    df = df_day(df, day)
+    kont = df['Counterparty Account Code'].unique() 
+    d = pd.DataFrame(index=kont)
+    d['Sum'] = 0
+    for name in kont:
+        df_1 = df.loc[df['Counterparty Account Code'] == name]
+        total = df_1['Amount'].sum()
+        d.loc[name, 'Sum'] = total
+    d = d.sort_values(['Sum'], ascending=[False])
+    d.columns.name = 'Counterparty Account Code'
+    return d
+
+def top_month(df):
+    kont = df['Counterparty Account Code'].unique() 
+    d = pd.DataFrame(index=kont)
+    d['Sum'] = 0
+    for name in kont:
+        df_1 = df.loc[df['Counterparty Account Code'] == name]
+        total = df_1['Amount'].sum()
+        d.loc[name, 'Sum'] = total
+    d = d.sort_values(['Sum'], ascending=[False])
+    d.columns.name = 'Counterparty Account Code'
+    return d
+    
+
+
+
